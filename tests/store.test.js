@@ -39,3 +39,11 @@ test('configuration rejects privileged keys and non-Supabase endpoints',()=>{
  for(const c of [{url:'http://example.supabase.co',publishableKey:'sb_publishable_test'},{...config,publishableKey:'sb_secret_test'},{...config,url:'https://evil.test'}]) assert.throws(()=>validateConfig(c));
  assert.doesNotThrow(()=>validateConfig(config));
 });
+test('temporary authentication outages do not masquerade as lost membership',async()=>{
+ const client=fixture();client.auth.getUser=async()=>({data:{user:null},error:{name:'AuthRetryableFetchError',status:0,message:'Failed to fetch'}});
+ await assert.rejects(()=>createStore(config,client).loadTracker(),error=>!(error instanceof AccessError));
+});
+test('server outages during session verification preserve the draft path',async()=>{
+ const client=fixture();client.auth.getUser=async()=>({data:{user:null},error:{status:503,message:'Unavailable'}});
+ await assert.rejects(()=>createStore(config,client).loadTracker(),error=>!(error instanceof AccessError));
+});

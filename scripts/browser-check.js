@@ -33,6 +33,7 @@ const sdk=`export function createClient(){
  if(window.fixture.fail) return {data:null,error:{message:'offline'}};
  if(name==='load_tracker')return {data:{tasks:window.fixture.rows,members:[{user_id:user.id,display_name:'Research member'}]},error:null};
  if(name==='save_task'){
+ if(window.fixture.delay)await new Promise(resolve=>window.fixture.release=resolve);
  const row=window.fixture.rows.find(r=>r.id===args.p_id);
  if(window.fixture.conflict){row.version++;row.notes='Another member note';window.fixture.conflict=false;return {data:null,error:{code:'40001'}};}
  if(row.version!==args.p_expected_version)return {data:null,error:{code:'40001'}};
@@ -41,6 +42,12 @@ const sdk=`export function createClient(){
 await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm',r=>r.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:sdk}));
 await page.goto(base);await page.waitForFunction(()=>document.getElementById('notice-title').textContent==='Invited members only');
 await page.locator('#account').click();await page.locator('#auth-form [name=email]').fill('member@example.test');await page.locator('#auth-form [name=password]').fill('long-test-password');await page.locator('#auth-form [type=submit]').click();await page.waitForFunction(()=>document.getElementById('notice-title').textContent==='Team workspace connected');
+await page.locator('.task-title').first().click();await page.locator('#task-form [name=notes]').fill('Draft being saved');
+await page.evaluate(()=>window.fixture.delay=true);await page.locator('#save-task').click();
+assert.equal(await page.locator('#task-form [name=notes]').isDisabled(),true,'editor freezes while its snapshot is saving');
+assert.equal(await page.locator('#task-dialog [data-close]').first().isDisabled(),true,'close must stay disabled during save');
+await page.keyboard.press('Escape');assert.equal(await page.locator('#task-dialog').evaluate(e=>e.open),true);
+await page.evaluate(()=>{window.fixture.delay=false;window.fixture.release();});await page.waitForFunction(()=>!document.getElementById('task-dialog').open);
 await page.locator('.task-title').first().click();await page.locator('#task-form [name=notes]').fill('<img src=x onerror=alert(1)> Measurements');
 await page.evaluate(()=>window.fixture.fail=true);await page.locator('#save-task').click();await page.waitForFunction(()=>document.getElementById('task-error').textContent.length>0);assert.match(await page.locator('#task-form [name=notes]').inputValue(),/Measurements/);
 await page.evaluate(()=>{window.fixture.fail=false;window.fixture.conflict=true;});await page.locator('#save-task').click();await page.locator('#conflict').waitFor({state:'visible'});assert.match(await page.locator('#conflict-values').innerText(),/Another member note/);assert.match(await page.locator('#task-form [name=notes]').inputValue(),/Measurements/);
@@ -48,6 +55,6 @@ await page.locator('#rebase').click();await page.locator('#task-form [name=statu
 await page.locator('#search').fill('Measurements');assert.equal(await page.locator('.task-row').count(),1);await page.locator('#clear-filters').click();
 const downloadPromise=page.waitForEvent('download');await page.locator('#backup').click();const download=await downloadPromise;const path=await download.path();const data=JSON.parse(await fs.readFile(path,'utf8'));assert.equal(data.tasks.length,74);assert.equal(data.tasks[0].status,'completed');
 await page.locator('#import').click();await page.locator('#import-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{bad')});await page.locator('#import-run').click();await page.waitForFunction(()=>document.getElementById('import-error').textContent.includes('not valid JSON'));await page.keyboard.press('Escape');
-await page.locator('#account').click();await page.waitForFunction(()=>document.getElementById('stat-completed').textContent==='—');assert.equal(await page.locator('.task-meta').filter({hasText:'Notes added'}).count(),0);
+await page.locator('#account').click();await page.waitForFunction(()=>document.getElementById('stat-completed').textContent==='â€”');assert.equal(await page.locator('.task-meta').filter({hasText:'Notes added'}).count(),0);
 assert.deepEqual(failures,[]);console.log('Browser checks passed: preview, filters, collapse, themes, 360px layout, recovery errors, sign-in, failed save, conflict reconciliation, XSS text, backup, invalid import, sign-out.');
 await browser.close();

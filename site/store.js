@@ -24,7 +24,13 @@ export function createStore(config, client) {
   const ids = new Set(TASKS.map(t=>t.id));
   async function requireUser() {
     const {data,error}=await client.auth.getUser();
-    if (error || !data?.user) throw new AccessError('Sign in with an invited member account.');
+    if (error) {
+      const confirmedDenial=error.status===401 || error.status===403 ||
+        ['bad_jwt','session_not_found','session_expired','refresh_token_not_found','refresh_token_expired','user_not_found','user_banned'].includes(error.code);
+      if (confirmedDenial) throw new AccessError('Your session has expired. Sign in again.');
+      throw new Error('Could not verify your session. Check your connection and try again. Your draft is retained.');
+    }
+    if (!data?.user) throw new AccessError('Sign in with an invited member account.');
     return data.user;
   }
   return {

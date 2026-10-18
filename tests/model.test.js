@@ -25,3 +25,11 @@ test('a refresh finishing after sign-out cannot restore private data',async()=>{
  resolve({tasks:[{...a,notes:'private'}],members:[]});await request;
  assert.equal(m.tasks.find(t=>t.id==='0-0').notes,'');
 });
+test('conflict reconciliation pins the version actually shown, not a later background refresh',()=>{
+ const m=createModel();m.applySnapshot({tasks:[a],members:[]});m.openTask('0-0');m.draft.notes='My draft';
+ m.applySnapshot({tasks:[{...a,notes:'Shown comparison',version:1}],members:[]});
+ const displayedVersion=1;
+ m.applySnapshot({tasks:[{...a,notes:'Unseen newer note',version:2}],members:[]});
+ m.rebase(displayedVersion);
+ assert.equal(m.expectedVersion,1);assert.equal(m.draft.notes,'My draft');
+});

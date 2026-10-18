@@ -9,7 +9,7 @@ export function createModel() {
       m.members=snapshot.members;
     },
     openTask(id) {const t=m.tasks.find(t=>t.id===id);if(!t)throw new Error('Unknown task.');m.editingId=id;m.expectedVersion=t.version;m.draft={...t};},
-    rebase() {m.expectedVersion=m.tasks.find(t=>t.id===m.editingId).version;},
+    rebase(displayedVersion=m.tasks.find(t=>t.id===m.editingId).version) {if(!Number.isSafeInteger(displayedVersion)||displayedVersion<0)throw new Error('Invalid conflict version.');m.expectedVersion=displayedVersion;},
     closeTask() {m.draft=null;m.editingId=null;m.expectedVersion=null;},
     clear() {generation++;flight=null;m.tasks=TASKS.map(defaultTask);m.members=[];m.closeTask();},
     refresh(fetchSnapshot) {
