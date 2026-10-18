@@ -14,3 +14,5 @@ Implementation decisions:
 - Explicit UTF-8 file editing and versioned module URLs avoid the earlier encoding/cache issue.
 
 Publication and live-page verification are performed after the final code review.
+
+Final review found three recovery/import issues, all fixed with regressions: maximum-length Unicode backups now fit the 8 MB import limit; runtime storage read failures switch to raw recovery export without discarding drafts; original-checklist import changes only statuses on the latest records inside the write lock. New regressions failed before their fixes. Full Node suite: 25 passing; full browser suite rerun.

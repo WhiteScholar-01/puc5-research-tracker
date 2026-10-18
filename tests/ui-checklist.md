@@ -12,3 +12,4 @@
 - [x] No external network requests or injected HTML from task notes.
 
 No shared database or automatic member/device synchronization is used.
+- [x] Runtime storage corruption switches Backup to the raw recovery copy.

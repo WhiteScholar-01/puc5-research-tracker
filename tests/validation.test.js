@@ -43,3 +43,14 @@ test('assignees can be simple names without member accounts',()=>{
  assert.equal(validateImport(backup(task({assigneeId:'Tariq Sir'})),ids)[0].assigneeId,'Tariq Sir');
  assert.throws(()=>validateImport(backup(task({assigneeId:'x'.repeat(121)})),ids));
 });
+import {readImportFile} from '../site/validation.js';
+import {TASKS} from '../site/catalog.js';
+test('every valid exported task can carry maximum-length Unicode notes and still be imported',async()=>{
+ const full=backup(...TASKS.map(t=>task({id:t.id,notes:'一'.repeat(10000)})));
+ const file=new Blob([JSON.stringify(full)]);assert.ok(file.size>1024*1024);
+ const decoded=await readImportFile(file);
+ assert.equal(validateImport(decoded,new Set(TASKS.map(t=>t.id))).length,74);
+});
+test('oversized imports are rejected before reading their contents',async()=>{
+ let read=false;await assert.rejects(()=>readImportFile({size:9*1024*1024,text:async()=>{read=true;return '{}';}}));assert.equal(read,false);
+});

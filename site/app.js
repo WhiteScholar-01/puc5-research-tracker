@@ -1,5 +1,5 @@
 import {PHASES,TASKS} from './catalog.js?v=local-1';
-import {summarize,filterTasks,validateImport,migrateLegacy,toCsv,localDate,editableFields} from './validation.js?v=local-1';
+import {summarize,filterTasks,validateImport,migrateLegacy,readImportFile,toCsv,localDate,editableFields} from './validation.js?v=local-1';
 import {createStore,ConflictError,STORAGE_KEY} from './store.js?v=local-1';
 import {createModel} from './model.js?v=local-1';
 const $=id=>document.getElementById(id);
@@ -73,7 +73,7 @@ function captureDraft(){
 async function refresh(announce=false){
   if(!store)return;
   try{await model.refresh(()=>store.loadTracker());ready=true;render();$('sync-time').textContent='Saved on this browser';if(announce)showToast('Saved progress loaded.');}
-  catch(error){$('sync-time').textContent='Could not read browser storage';if(announce)showToast(error.message);throw error;}
+  catch(error){ready=false;startupError=error.message;render();$('sync-time').textContent='Could not read browser storage';if($('task-dialog').open){$('task-error').textContent=error.message;$('save-task').disabled=true;}if($('import-dialog').open)$('import-error').textContent=error.message;if(announce)showToast(error.message);throw error;}
 }
 async function quickToggle(id){
   if(!ready||busy)return;busy=true;const task=model.tasks.find(t=>t.id===id);
@@ -114,7 +114,7 @@ $('task-form').onsubmit=async e=>{
         $('conflict').hidden=false;
       }catch{$('task-error').textContent='Could not read the latest saved version. Your draft is retained.';}
     }
-  }finally{busy=false;freezeEditor(false);if(!$('conflict').hidden)$('save-task').disabled=true;}
+  }finally{busy=false;freezeEditor(false);$('save-task').disabled=!ready||!$('conflict').hidden;}
 };
 $('rebase').onclick=()=>{model.rebase(conflictVersion);$('conflict').hidden=true;$('task-error').textContent='Review your draft, then save to replace the displayed values.';$('save-task').disabled=false;};
 $('backup').onclick=()=>{
@@ -127,16 +127,12 @@ $('import').onclick=()=>{if(ready){$('import-error').textContent='';showDialog('
 $('import-run').onclick=async()=>{
   if(!ready||busy)return;const file=$('import-file').files[0];$('import-error').textContent='';
   if(!file){$('import-error').textContent='Choose a JSON file first.';return;}
-  if(file.size>1024*1024){$('import-error').textContent='Choose a backup under 1 MB.';return;}
   busy=true;await runButton($('import-run'),async()=>{
     try{
-      const parsed=JSON.parse(await file.text());let records;
-      if($('import-kind').value==='legacy'){
-        const legacy=migrateLegacy(parsed,ids);await refresh();
-        records=legacy.map(x=>{const current=model.tasks.find(t=>t.id===x.id);return {id:x.id,version:current.version,...editableFields({...current,status:x.status})};});
-      }else records=validateImport(parsed,ids);
+      const parsed=await readImportFile(file),legacy=$('import-kind').value==='legacy';
+      const records=legacy?migrateLegacy(parsed,ids):validateImport(parsed,ids);
       if(!confirm(`Replace the saved values of ${records.length} tasks in this browser? Other browsers are not affected.`))return;
-      await store.restoreTasks(records);$('import-dialog').close();$('import-file').value='';showToast(`${records.length} tasks imported in this browser.`);await refresh();
+      if(legacy)await store.restoreLegacy(parsed);else await store.restoreTasks(records);$('import-dialog').close();$('import-file').value='';showToast(`${records.length} tasks imported in this browser.`);await refresh();
     }catch(error){$('import-error').textContent=error instanceof SyntaxError?'This file is not valid JSON.':error.message;}
     finally{busy=false;}
   });

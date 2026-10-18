@@ -53,3 +53,10 @@ export function toCsv(tasks) {
     ...tasks.map(t => [t.id,t.title,t.status,t.priority,t.dueDate,t.notes,t.assigneeId,t.updatedAt])];
   return '\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n');
 }
+
+export async function readImportFile(file) {
+  if (!file || typeof file.text !== 'function') throw new Error('Choose a JSON file first.');
+  // Every valid 74-task export, including escaped control characters, fits here.
+  if (file.size > 8*1024*1024) throw new Error('Choose a backup under 8 MB.');
+  return JSON.parse(await file.text());
+}

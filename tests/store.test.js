@@ -39,3 +39,11 @@ test('restoring an older backup is intentional and advances current local versio
  const s=createStore(memory());await s.saveTask('0-0',0,fields);await s.saveTask('0-0',1,{...fields,notes:'More recent'});
  const r=await s.restoreTasks([{id:'0-0',version:0,...fields,notes:'Restored'}]);assert.equal(r[0].notes,'Restored');assert.equal(r[0].version,3);
 });
+test('legacy import preserves the most recent notes and priority in storage',async()=>{
+ const storage=memory(),first=createStore(storage),second=createStore(storage);
+ await first.saveTask('0-0',0,fields);
+ const oldSnapshot=await first.loadTracker();
+ await second.saveTask('0-0',1,{...fields,notes:'New notes from another tab',priority:'low'});
+ await first.restoreLegacy({'0-0':false});
+ const row=(await first.loadTracker()).tasks[0];assert.equal(row.status,'pending');assert.equal(row.notes,'New notes from another tab');assert.equal(row.priority,'low');assert.ok(row.version>oldSnapshot.tasks[0].version);
+});

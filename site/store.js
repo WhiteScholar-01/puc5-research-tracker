@@ -1,5 +1,5 @@
 import {TASKS} from './catalog.js?v=local-1';
-import {editableFields,validateImport} from './validation.js?v=local-1';
+import {editableFields,validateImport,migrateLegacy} from './validation.js?v=local-1';
 import {defaultTask} from './model.js?v=local-1';
 export const STORAGE_KEY='puc5tracker.local.v1';
 export class ConflictError extends Error {}
@@ -27,6 +27,13 @@ export function createStore(storage=globalThis.localStorage) {
       return locked(()=>{const tasks=read(),index=tasks.findIndex(t=>t.id===id),current=tasks[index];
         if(current.version!==expectedVersion)throw new ConflictError('This task changed in another tab. Compare the saved values before saving again.');
         const saved={id,...clean,version:current.version+1,updatedAt:new Date().toISOString()};tasks[index]=saved;write(tasks);return saved;});
+    },
+    async restoreLegacy(progress){
+      const clean=migrateLegacy(progress,ids);
+      return locked(()=>{const changes=new Map(clean.map(t=>[t.id,t.status])),saved=[];
+        const next=read().map(current=>{if(!changes.has(current.id))return current;
+          const row={...current,status:changes.get(current.id),version:current.version+1,updatedAt:new Date().toISOString()};saved.push(row);return row;});
+        write(next);return saved;});
     },
     async restoreTasks(records){
       const clean=validateImport({format:'puc5-tracker',version:1,tasks:records},ids);
