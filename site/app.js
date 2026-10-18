@@ -20,20 +20,20 @@ function readableUpdate(t){return t.updatedAt?`Updated ${new Date(t.updatedAt).t
 function filters(){return {query:$('search').value,phaseId:$('phase-filter').value,status:$('status-filter').value,priority:$('priority-filter').value};}
 function render(){
   const metrics=summarize(model.tasks);
-  $('percent').textContent=shared?`${metrics.percent}%`:'â€”';
+  $('percent').textContent=shared?`${metrics.percent}%`:'—';
   $('overall-progress').value=shared?metrics.percent:0;
   $('progress-caption').textContent=shared?`${metrics.completed} of ${metrics.total} tasks completed`:'74 tasks across 9 phases';
-  $('stat-completed').textContent=shared?metrics.completed:'â€”';
-  $('stat-in-progress').textContent=shared?metrics.inProgress:'â€”';
-  $('stat-overdue').textContent=shared?metrics.overdue:'â€”';
-  $('account').textContent=session?'Sign out':'Member sign in â†—';
-  $('notice-title').textContent=shared?'Team workspace connected':session?'Loading team workspaceâ€¦':store?'Invited members only':'Research roadmap preview';
+  $('stat-completed').textContent=shared?metrics.completed:'—';
+  $('stat-in-progress').textContent=shared?metrics.inProgress:'—';
+  $('stat-overdue').textContent=shared?metrics.overdue:'—';
+  $('account').textContent=session?'Sign out':'Member sign in ↗';
+  $('notice-title').textContent=shared?'Team workspace connected':session?'Loading team workspace…':store?'Invited members only':'Research roadmap preview';
   $('notice-copy').textContent=shared?'You and your team are working from the same saved progress.':session?'Checking your membership and fetching the latest progress.':store?'Sign in to see team progress, add notes, and update tasks.':'Connect shared storage to save progress and invite your team.';
-  $('setup').hidden=shared;$('setup').textContent=store?'Sign in â†’':'Connect workspace â†’';
+  $('setup').hidden=shared;$('setup').textContent=store?'Sign in →':'Connect workspace →';
   for(const id of ['backup','csv','import'])$(id).disabled=!shared;
   $('refresh').hidden=!shared;
   const visible=filterTasks(model.tasks,filters());
-  $('results-count').textContent=`${visible.length} of ${TASKS.length} research tasks${shared?` Â· ${metrics.pending} pending`:''}`;
+  $('results-count').textContent=`${visible.length} of ${TASKS.length} research tasks${shared?` · ${metrics.pending} pending`:''}`;
   $('empty').hidden=visible.length>0;
   const root=$('phases');root.replaceChildren();
   for(const p of PHASES){
@@ -41,12 +41,12 @@ function render(){
     const all=model.tasks.filter(t=>t.phaseId===p.id),pm=summarize(all);
     const d=element('details','phase');d.open=!closedPhases.has(p.id);d.id=`phase-${p.id}`;
     const sum=element('summary');sum.append(element('span','phase-number',String(p.id+1).padStart(2,'0')));
-    const name=element('span','phase-title',shortPhase(p));name.append(element('span','phase-week',p.weeks.replace('-','â€“')));sum.append(name);
+    const name=element('span','phase-title',shortPhase(p));name.append(element('span','phase-week',p.weeks.replace('-','–')));sum.append(name);
     const meta=element('span','phase-completion');const bar=element('progress');bar.max=all.length;bar.value=shared?pm.completed:0;bar.setAttribute('aria-label',`${shortPhase(p)} completion`);meta.append(bar,element('span','',shared?`${pm.completed} / ${all.length}`:`${all.length} tasks`));sum.append(meta);d.append(sum);
     const list=element('div','task-list');
     for(const t of items){
       const row=element('div',`task-row ${t.status==='completed'?'is-completed':''}`);
-      row.append(element('span',`task-circle ${t.status==='completed'?'done':t.status==='in-progress'?'started':''}`,t.status==='completed'?'âœ“':t.status==='in-progress'?'Â·':''));
+      row.append(element('span',`task-circle ${t.status==='completed'?'done':t.status==='in-progress'?'started':''}`,t.status==='completed'?'✓':t.status==='in-progress'?'·':''));
       const content=element('div','task-content');const title=element('button','task-title',t.title);title.type='button';title.disabled=!shared;title.addEventListener('click',()=>openTask(t.id));content.append(title);
       const info=element('div','task-meta');
       if(shared){
@@ -58,7 +58,7 @@ function render(){
       content.append(info);row.append(content);
       if(t.title.startsWith('GATE '))row.append(element('span','task-badge gate',t.title.split(':')[0]));
       else if(shared&&t.priority==='high')row.append(element('span','task-badge high','HIGH'));
-      if(shared){const edit=element('button','task-arrow','â†—');edit.setAttribute('aria-label',`Edit ${t.title}`);edit.onclick=()=>openTask(t.id);row.append(edit);}
+      if(shared){const edit=element('button','task-arrow','↗');edit.setAttribute('aria-label',`Edit ${t.title}`);edit.onclick=()=>openTask(t.id);row.append(edit);}
       list.append(row);
     }
     d.append(list);d.addEventListener('toggle',()=>{if(!d.isConnected)return;if(d.open)closedPhases.delete(p.id);else closedPhases.add(p.id);});root.append(d);
@@ -78,7 +78,7 @@ function captureDraft(){
 async function refresh(announce=false){
   if(!store||!session)return;
   try{await model.refresh(()=>store.loadTracker());if(!session)return;shared=true;render();$('sync-time').textContent=`Synced ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;if(announce)showToast('Shared progress refreshed.');}
-  catch(e){if(e instanceof AccessError){clearPrivate();showToast(e.message);}else{$('sync-time').textContent='Sync failed Â· edits are not saved offline';if(announce)showToast(e.message);throw e;}}
+  catch(e){if(e instanceof AccessError){clearPrivate();showToast(e.message);}else{$('sync-time').textContent='Sync failed · edits are not saved offline';if(announce)showToast(e.message);throw e;}}
 }
 function freezeEditor(saving){for(const control of $('task-form').querySelectorAll('input,select,textarea,button'))control.disabled=saving;$('save-task').textContent=saving?'Saving…':'Save changes';}
 async function runButton(button,action){button.disabled=true;try{await action();}finally{button.disabled=false;}}

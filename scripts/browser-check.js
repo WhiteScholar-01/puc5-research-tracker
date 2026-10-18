@@ -10,6 +10,9 @@ const failures=[];page.on('pageerror',e=>failures.push(e.message));
 await fs.mkdir(new URL('../artifacts/',import.meta.url),{recursive:true});
 await page.goto(base);await page.waitForSelector('.phase');
 assert.equal(await page.locator('.task-row').count(),74);assert.equal(await page.locator('.phase').count(),9);
+assert.equal(await page.locator('#account').innerText(),'Member sign in \u2197');
+assert.equal(await page.locator('#percent').innerText(),'\u2014');
+assert.equal(await page.locator('.phase-week').first().innerText(),'W1\u20136');
 await page.screenshot({path:fileURLToPath(new URL('../artifacts/desktop.png',import.meta.url)),fullPage:false});
 await page.locator('#search').fill('GATE A:');assert.equal(await page.locator('.task-row').count(),1);
 await page.locator('#clear-filters').click();assert.equal(await page.locator('.task-row').count(),74);
@@ -55,6 +58,6 @@ await page.locator('#rebase').click();await page.locator('#task-form [name=statu
 await page.locator('#search').fill('Measurements');assert.equal(await page.locator('.task-row').count(),1);await page.locator('#clear-filters').click();
 const downloadPromise=page.waitForEvent('download');await page.locator('#backup').click();const download=await downloadPromise;const path=await download.path();const data=JSON.parse(await fs.readFile(path,'utf8'));assert.equal(data.tasks.length,74);assert.equal(data.tasks[0].status,'completed');
 await page.locator('#import').click();await page.locator('#import-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{bad')});await page.locator('#import-run').click();await page.waitForFunction(()=>document.getElementById('import-error').textContent.includes('not valid JSON'));await page.keyboard.press('Escape');
-await page.locator('#account').click();await page.waitForFunction(()=>document.getElementById('stat-completed').textContent==='â€”');assert.equal(await page.locator('.task-meta').filter({hasText:'Notes added'}).count(),0);
+await page.locator('#account').click();await page.waitForFunction(()=>document.getElementById('stat-completed').textContent==='—');assert.equal(await page.locator('.task-meta').filter({hasText:'Notes added'}).count(),0);
 assert.deepEqual(failures,[]);console.log('Browser checks passed: preview, filters, collapse, themes, 360px layout, recovery errors, sign-in, failed save, conflict reconciliation, XSS text, backup, invalid import, sign-out.');
 await browser.close();
