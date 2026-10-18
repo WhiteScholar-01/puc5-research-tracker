@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PUC5 digital twin research tracker</title>
+<style>
+:root{--bg:#fff;--fg:#1f2328;--mut:#5f6770;--line:#d8dce0;--card:#f6f7f8;--acc:#0f6e56;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16191c;--fg:#e6e8ea;--mut:#9aa2aa;--line:#2f353b;--card:#1e2226;--acc:#5dcaa5;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#16191c;--fg:#e6e8ea;--mut:#9aa2aa;--line:#2f353b;--card:#1e2226;--acc:#5dcaa5;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 16px}
+.bar{height:10px;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--acc);transition:width .2s}
+.pct{font-size:13px;color:var(--mut);margin:6px 0 20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+h2{font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px}
+h2 span{color:var(--mut);font-weight:400;font-size:13px}
+label{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer}
+input{margin-top:4px;accent-color:var(--acc);flex:none}
+input:checked+span{color:var(--mut);text-decoration:line-through}
+button{background:none;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+</style></head><body><main>
+<h1>PUC5 digital twin research tracker</h1>
+<p class="sub">Tick items as you finish them. Progress is saved in this browser only.</p>
+<div class="bar"><div class="fill" id="fill"></div></div>
+<div class="pct" id="pct"></div>
+<div id="root"></div>
+<button id="reset">Reset all</button>
+</main>
+<script>
+var P=[
+["0. Literature and problem lock (W1-6)",["Learn: MATLAB Onramp, then basic state-space from Control Tutorials","Read the PUC overview chapter and the original PUC paper","Hand-draw the 8 PUC5 switching states and have your supervisor check them","Set a search protocol: IEEE Xplore, Scopus, Scholar","Build a gap table: PUC control, digital twins, capacitor monitoring","Check the novelty claim against the table","Lock problem statement, RQ1 to RQ3 and C1 to C4","Choose baselines (RLS, EKF) and shortlist 2 to 3 journals"]],
+["1. Model, learning ladders, observability (W5-22)",["Fix the load and filter structure and the starting parameter table","Ladder 1, rung 1: RC and RL step response in state space, match ode45","Ladder 1, rung 2: buck converter, switched vs averaged model","Ladder 1, rung 3: H-bridge with LC filter, switching-state matrices with ZOH","Ladder 1, rung 4: flying-capacitor 3-level converter, floating capacitor and balancing","Run puc5_standalone_discretize.m and pass all its checks","Confirm the (m, n) mapping against the PUC5 schematic","Closed-loop reference simulation: fixed controller plus V_aux balancing","Build a truth plant with dead time, R_ds(on), ESR and sensor noise","Ladder 2, rung 1: estimate R and C of an RC circuit by least squares","Ladder 2, rung 2: RLS with forgetting factor on noisy RLC data","Ladder 2, rung 3: estimate L and R of an H-bridge RL load from switching data","Ladder 2, rung 4: estimate a flying-capacitor value and find where excitation vanishes","Derive which of L, R, C_f, C_aux, ESR is observable per switching state (RQ1)","Simulate excitation under baseline and excitation-aware balancing (RQ2)","Implement EKF and MDA-EFO and compare with RLS on simulated data","GATE A: are C_aux and ESR identifiable? If not, revise the claim before ordering hardware"]],
+["2. Prototype design and PCB (W14-26)",["Learn: ripple, rating and ESR equations from a power electronics text","Size L, C_f, C_aux and dead time by simulation","Select MOSFETs, gate drivers and controller board","Design sensing for V_dc, V_aux, i_L, v_o with test points","Add switchable C_aux bank and series ESR option","Add precharge, fuse and hardware overcurrent trip","Safety review with your supervisor","Order PCB and parts only after Gate A"]],
+["3. Build and characterize (W24-34)",["Assemble and test gate drive without power","Bring up in steps: 5 V, precharge, resistive load, 48 V","Check V_aux balance at each voltage","Measure L, C_f, C_aux, ESR, R with the LCR meter","Calibrate sensors and record their accuracy","Capture reference waveforms with the DPO3054"]],
+["4. HIL twin and fidelity (W18-34)",["Learn Typhoon basics: tutorials, Schematic Editor, SCADA, Python API","Twin ladder 1: half-bridge with RL load, compare with MATLAB","Twin ladder 2: H-bridge with LC filter, compare with MATLAB","Twin ladder 3: flying-capacitor 3-level converter","Build the PUC5 twin with dead time, R_ds(on), diode drop and ESR","Map gating, sensor and scope signals to HIL I/O and check levels","Check the model fits the 402 at your Ts","Run E1 open-loop fidelity against hardware","GATE B: NRMSE target met? If not, find the missing nonideality"]],
+["5. Online estimator and excitation (W28-38)",["Port the offline estimators to the host PC and replay recorded data","Close the online loop through the Typhoon API","Run excitation-aware redundancy selection on the controller","Run RLS and EKF baselines on hardware data"]],
+["6. Experiment campaign (W34-48)",["E1, E2 Open-loop fidelity and steady state at 3 power levels","E3, E4 Load step and DC-link step","E5 Inductance change","E6 C_aux step with the switchable bank","E7 ESR increase","E8 V_aux startup imbalance","E9 Sensor noise sensitivity","E10 Baseline comparison","E11 Execution time and CPU margin","Repeat each test at least 5 times and save raw data and logs"]],
+["7. Analysis and figures (W46-52)",["NRMSE per signal and estimation error against LCR values","Convergence time, THD and V_aux ripple","Statistics: mean, spread, confidence intervals","State instrument uncertainty next to every error","Make final figures and tables"]],
+["8. Writing and submission (W48-60)",["Method: equations, observability result, parameter table","Experiments and results","Limitations: 48 V, single phase, about 80 W","Archive code, data, BOM and schematic","Co-author review","Check template, length and ethics","Submit, log reviewer comments, plan a revision buffer"]]
+];
+var K="puc5tracker.v3",S={};
+try{S=JSON.parse(localStorage.getItem(K)||"{}")}catch(e){S={}}
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
+function upd(){var t=0,d=0;P.forEach(function(p,i){var c=0;p[1].forEach(function(_,j){t++;if(S[i+"-"+j]){d++;c++}});var h=document.getElementById("c"+i);if(h)h.textContent=c+"/"+p[1].length});
+var r=t?Math.round(100*d/t):0;document.getElementById("fill").style.width=r+"%";document.getElementById("pct").textContent=d+" of "+t+" done ("+r+"%)"}
+var root=document.getElementById("root");
+P.forEach(function(p,i){var s=document.createElement("section"),h=document.createElement("h2");h.innerHTML="<b></b><span id='c"+i+"'></span>";h.firstChild.textContent=p[0];s.appendChild(h);
+p[1].forEach(function(t,j){var l=document.createElement("label"),c=document.createElement("input"),x=document.createElement("span");c.type="checkbox";c.checked=!!S[i+"-"+j];x.textContent=t;
+c.onchange=function(){S[i+"-"+j]=c.checked;save();upd()};l.appendChild(c);l.appendChild(x);s.appendChild(l)});root.appendChild(s)});
+document.getElementById("reset").onclick=function(){if(confirm("Clear all progress?")){S={};save();document.querySelectorAll("input").forEach(function(c){c.checked=false});upd()}};
+upd();
+</script></body></html>
