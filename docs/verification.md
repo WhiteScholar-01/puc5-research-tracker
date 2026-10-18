@@ -27,3 +27,4 @@ Final: Ruling: No full-page-reload draft persistence; sessions and drafts stay i
 Final: Ruling: GitHub publishing is already explicitly authorized; use main as the new isolated repository's deployment branch without another integration-choice prompt — cost: website/catalog become public as approved.
 Deployment: GitHub Pages run 39127888880 succeeded, including all 32 checks.
 Live verification caught misencoded JavaScript punctuation after a Windows text-editing step. Corrected by explicit UTF-8 reads/writes; exact browser assertions for sign-in arrow, progress dash and week range failed first and pass after correction. Full Node/Postgres suite: 32/32. Full browser suite: pass. Republishing this correction.
+Deployment verification: entry module now includes a release version so returning browsers load the corrected script instead of a cached earlier copy.
