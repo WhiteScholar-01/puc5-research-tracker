@@ -1,49 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createStore, ConflictError, AccessError, validateConfig} from '../site/store.js';
-const member={id:'11111111-1111-4111-8111-111111111111'};
-const fields={status:'completed',priority:'high',dueDate:null,notes:'Measured',assigneeId:null};
-const config={url:'https://example.supabase.co',publishableKey:'sb_publishable_example'};
-function fixture({user=member,rpcResult={data:[{id:'0-0',status:'completed',priority:'high',due_date:null,notes:'Measured',assignee_id:null,version:2,updated_at:'2026-10-18T12:00:00Z',updated_by:member.id}],error:null},onRpc=()=>{}}={}) {
- return {auth:{getUser:async()=>({data:{user},error:null}),getSession:async()=>({data:{session:user?{user}:null},error:null})},rpc:async(name,args)=>{onRpc(name,args);return rpcResult;}};
-}
-test('signed-out users cannot load shared progress',async()=>{
- const s=createStore(config,fixture({user:null}));
- await assert.rejects(()=>s.loadTracker(),AccessError);
+import {createStore,ConflictError,StorageError,STORAGE_KEY} from '../site/store.js';
+const fields={status:'completed',priority:'high',dueDate:null,notes:'Measured',assigneeId:'Saqib'};
+function memory(){const values=new Map();return {getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)};}
+test('any visitor can save without an account and recover progress after reopening',async()=>{
+ const storage=memory(),store=createStore(storage);
+ const initial=await store.loadTracker();assert.equal(initial.tasks.length,74);
+ const saved=await store.saveTask('0-0',0,fields);assert.equal(saved.version,1);assert.ok(saved.updatedAt);
+ const reopened=await createStore(storage).loadTracker();assert.equal(reopened.tasks[0].notes,'Measured');assert.equal(reopened.tasks[0].assigneeId,'Saqib');
 });
-test('saved record is normalized only after confirmed RPC response',async()=>{
- let release;let request;const pending=new Promise(r=>release=r);
- const client=fixture();client.rpc=async(name,args)=>{request={name,args};return pending;};
- const s=createStore(config,client);let done=false;
- const promise=s.saveTask('0-0',1,{...fields,updatedBy:'spoof'}).then(r=>{done=true;return r;});
- await new Promise(r=>setImmediate(r));assert.equal(done,false);
- assert.equal(request.name,'save_task');assert.equal('updatedBy' in request.args.p_fields,false);
- release({data:[{id:'0-0',...fields,due_date:null,assignee_id:null,version:2,updated_at:'2026-10-18T12:00:00Z',updated_by:member.id}],error:null});
- const record=await promise;assert.equal(record.version,2);assert.equal(record.updatedBy,member.id);
+test('separate browsers keep separate progress',async()=>{
+ await createStore(memory()).saveTask('0-0',0,fields);
+ assert.equal((await createStore(memory()).loadTracker()).tasks[0].status,'pending');
 });
-test('database version conflicts preserve a distinct error type',async()=>{
- const s=createStore(config,fixture({rpcResult:{data:null,error:{code:'40001',message:'Task changed'}}}));
- await assert.rejects(()=>s.saveTask('0-0',1,fields),ConflictError);
+test('another tab changing a task causes a conflict instead of silently overwriting',async()=>{
+ const storage=memory(),first=createStore(storage),second=createStore(storage);
+ await first.saveTask('0-0',0,fields);
+ await assert.rejects(()=>second.saveTask('0-0',0,{...fields,notes:'Stale draft'}),ConflictError);
+ assert.equal((await first.loadTracker()).tasks[0].notes,'Measured');
 });
-test('permission denial is distinguishable from network failure',async()=>{
- const s=createStore(config,fixture({rpcResult:{data:null,error:{code:'42501',message:'Denied'}}}));
- await assert.rejects(()=>s.saveTask('0-0',1,fields),AccessError);
- const failing=createStore(config,fixture({rpcResult:{data:null,error:{message:'Network failed'}}}));
- await assert.rejects(()=>failing.saveTask('0-0',1,fields),e=>!(e instanceof ConflictError)&&!(e instanceof AccessError));
+test('storage failure never reports success or destroys earlier progress',async()=>{
+ const storage=memory(),store=createStore(storage);await store.saveTask('0-0',0,fields);
+ const before=storage.getItem(STORAGE_KEY);storage.setItem=()=>{throw new Error('quota');};
+ await assert.rejects(()=>store.saveTask('0-0',1,{...fields,notes:'New draft'}),StorageError);
+ assert.equal(storage.getItem(STORAGE_KEY),before);
 });
-test('invalid restore cannot reach the network',async()=>{
- let called=false;const s=createStore(config,fixture({onRpc:()=>called=true}));
- await assert.rejects(()=>s.restoreTasks([{id:'bad'}]));assert.equal(called,false);
+test('corrupted stored progress is preserved and never silently reset',async()=>{
+ const storage=memory();storage.setItem(STORAGE_KEY,'{bad');const s=createStore(storage);
+ await assert.rejects(()=>s.loadTracker(),StorageError);await assert.rejects(()=>s.saveTask('0-0',0,fields),StorageError);
+ assert.equal(s.readRaw(),'{bad');
 });
-test('configuration rejects privileged keys and non-Supabase endpoints',()=>{
- for(const c of [{url:'http://example.supabase.co',publishableKey:'sb_publishable_test'},{...config,publishableKey:'sb_secret_test'},{...config,url:'https://evil.test'}]) assert.throws(()=>validateConfig(c));
- assert.doesNotThrow(()=>validateConfig(config));
+test('import validates every task before replacing any local progress',async()=>{
+ const storage=memory(),s=createStore(storage);await s.saveTask('0-0',0,fields);const before=storage.getItem(STORAGE_KEY);
+ await assert.rejects(()=>s.restoreTasks([{id:'0-0',version:1,...fields},{id:'0-1',version:0,...fields,notes:null}]));
+ assert.equal(storage.getItem(STORAGE_KEY),before);
 });
-test('temporary authentication outages do not masquerade as lost membership',async()=>{
- const client=fixture();client.auth.getUser=async()=>({data:{user:null},error:{name:'AuthRetryableFetchError',status:0,message:'Failed to fetch'}});
- await assert.rejects(()=>createStore(config,client).loadTracker(),error=>!(error instanceof AccessError));
-});
-test('server outages during session verification preserve the draft path',async()=>{
- const client=fixture();client.auth.getUser=async()=>({data:{user:null},error:{status:503,message:'Unavailable'}});
- await assert.rejects(()=>createStore(config,client).loadTracker(),error=>!(error instanceof AccessError));
+test('restoring an older backup is intentional and advances current local versions',async()=>{
+ const s=createStore(memory());await s.saveTask('0-0',0,fields);await s.saveTask('0-0',1,{...fields,notes:'More recent'});
+ const r=await s.restoreTasks([{id:'0-0',version:0,...fields,notes:'Restored'}]);assert.equal(r[0].notes,'Restored');assert.equal(r[0].version,3);
 });

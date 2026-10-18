@@ -27,7 +27,7 @@ test('malformed and unsupported backups fail before writes', () => {
   for(const value of [null,[],{}, {format:'puc5-tracker',version:2,tasks:[]},backup(),backup(task(),task())]) assert.throws(()=>validateImport(value,ids));
 });
 test('unknown IDs, invalid fields and excessive notes are rejected', () => {
-  for(const extra of [{id:'unknown'},{status:'other'},{priority:'urgent'},{dueDate:'2026-02-30'},{notes:'x'.repeat(10001)},{notes:null},{assigneeId:5},{assigneeId:'not-a-uuid'},{version:-1},{version:0.5}]) assert.throws(()=>validateImport(backup(task(extra)),ids));
+  for(const extra of [{id:'unknown'},{status:'other'},{priority:'urgent'},{dueDate:'2026-02-30'},{notes:'x'.repeat(10001)},{notes:null},{assigneeId:5},{assigneeId:'x'.repeat(121)},{version:-1},{version:0.5}]) assert.throws(()=>validateImport(backup(task(extra)),ids));
 });
 test('legacy migration is explicit and rejects bad IDs or non-boolean values', () => {
   assert.deepEqual(migrateLegacy({'0-0':true,'0-1':false},ids),[{id:'0-0',status:'completed'},{id:'0-1',status:'pending'}]);
@@ -38,4 +38,8 @@ test('CSV protects formulas and escapes punctuation and newlines', () => {
   const csv=toCsv([task({title:'=SUM(A1)',notes:'He said "yes",\nnext'})]);
   assert.ok(csv.includes('"\'=SUM(A1)"'));
   assert.ok(csv.includes('"He said ""yes"",\nnext"'));
+});
+test('assignees can be simple names without member accounts',()=>{
+ assert.equal(validateImport(backup(task({assigneeId:'Tariq Sir'})),ids)[0].assigneeId,'Tariq Sir');
+ assert.throws(()=>validateImport(backup(task({assigneeId:'x'.repeat(121)})),ids));
 });

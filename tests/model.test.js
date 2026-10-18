@@ -10,7 +10,7 @@ test('refresh replaces saved records but preserves editor draft',()=>{
  assert.equal(model.tasks.find(t=>t.id==='0-0').notes,'Other member');
  model.rebase();assert.equal(model.expectedVersion,1);assert.equal(model.draft.notes,'Unsaved measurements');
 });
-test('sign-out clears private notes and draft',()=>{
+test('clearing the model resets saved view and draft',()=>{
  const m=createModel();m.applySnapshot({tasks:[{...a,notes:'private'}],members:[{id:'a',name:'Member'}]});m.openTask('0-0');m.clear();
  assert.equal(m.draft,null);assert.equal(m.members.length,0);assert.equal(m.tasks.find(t=>t.id==='0-0').notes,'');
 });
@@ -20,7 +20,7 @@ test('simultaneous refresh calls use a single active request',async()=>{
  const one=m.refresh(fetch),two=m.refresh(fetch);assert.equal(calls,1);
  resolve({tasks:[a],members:[]});await Promise.all([one,two]);assert.equal(calls,1);
 });
-test('a refresh finishing after sign-out cannot restore private data',async()=>{
+test('a refresh finishing after a model reset cannot restore stale data',async()=>{
  const m=createModel();let resolve;const request=m.refresh(()=>new Promise(r=>resolve=r));m.clear();
  resolve({tasks:[{...a,notes:'private'}],members:[]});await request;
  assert.equal(m.tasks.find(t=>t.id==='0-0').notes,'');

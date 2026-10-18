@@ -1,63 +1,39 @@
-import {TASKS} from './catalog.js';
-import {editableFields, validateImport} from './validation.js';
+import {TASKS} from './catalog.js?v=local-1';
+import {editableFields,validateImport} from './validation.js?v=local-1';
+import {defaultTask} from './model.js?v=local-1';
+export const STORAGE_KEY='puc5tracker.local.v1';
 export class ConflictError extends Error {}
-export class AccessError extends Error {}
-export function validateConfig(config) {
-  if (!config || !/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(config.url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(config.publishableKey)) throw new Error('Connect a Supabase project URL and browser publishable key in config.js.');
-  return config;
-}
-export function fromRow(t) {
-  return {id:t.id,status:t.status,priority:t.priority,dueDate:t.due_date,notes:t.notes,
-    assigneeId:t.assignee_id,version:t.version,updatedAt:t.updated_at,updatedBy:t.updated_by};
-}
-function unwrap({data,error}) {
-  if (error) {
-    if (error.code === '40001') throw new ConflictError('This task changed since you opened it. Compare the latest version before saving again.');
-    if (error.code === '42501' || error.code === 'PGRST301' || error.code === 'PGRST303') throw new AccessError('Your session or team membership is no longer active. Sign in again or contact the tracker owner.');
-    throw new Error('The request could not be completed. Check your connection and try again.');
+export class StorageError extends Error {}
+export function createStore(storage=globalThis.localStorage) {
+  const ids=new Set(TASKS.map(t=>t.id));
+  function readRaw(){try{return storage.getItem(STORAGE_KEY);}catch{throw new StorageError('Browser storage is unavailable. Allow website storage or use another browser.');}}
+  function read(){
+    const raw=readRaw();if(raw===null)return TASKS.map(defaultTask);
+    try{
+      const data=JSON.parse(raw),clean=validateImport(data,ids);
+      if(clean.length!==TASKS.length)throw new Error('Incomplete saved progress');
+      const metadata=new Map(data.tasks.map(t=>[t.id,t]));
+      return clean.map(t=>({...t,updatedAt:typeof metadata.get(t.id).updatedAt==='string'&&Number.isFinite(Date.parse(metadata.get(t.id).updatedAt))?metadata.get(t.id).updatedAt:null}));
+    }catch{throw new StorageError('Saved progress could not be read. Use Backup to download a recovery copy before clearing website data.');}
   }
-  return data;
-}
-export function createStore(config, client) {
-  validateConfig(config);
-  if (!client) throw new Error('The sign-in service could not be loaded. Reload to try again.');
-  const ids = new Set(TASKS.map(t=>t.id));
-  async function requireUser() {
-    const {data,error}=await client.auth.getUser();
-    if (error) {
-      const confirmedDenial=error.status===401 || error.status===403 ||
-        ['bad_jwt','session_not_found','session_expired','refresh_token_not_found','refresh_token_expired','user_not_found','user_banned'].includes(error.code);
-      if (confirmedDenial) throw new AccessError('Your session has expired. Sign in again.');
-      throw new Error('Could not verify your session. Check your connection and try again. Your draft is retained.');
-    }
-    if (!data?.user) throw new AccessError('Sign in with an invited member account.');
-    return data.user;
-  }
+  function write(tasks){try{storage.setItem(STORAGE_KEY,JSON.stringify({format:'puc5-tracker',version:1,tasks}));}catch{throw new StorageError('Changes could not be saved in this browser. Your draft is retained. Free some browser storage or download a backup.');}}
+  function locked(action){return globalThis.navigator?.locks?globalThis.navigator.locks.request(STORAGE_KEY,action):Promise.resolve().then(action);}
   return {
-    async signIn(email,password) {return unwrap(await client.auth.signInWithPassword({email,password}));},
-    async signOut() {unwrap(await client.auth.signOut({scope:'local'}));},
-    async requestRecovery(email,redirectUrl) {unwrap(await client.auth.resetPasswordForEmail(email,{redirectTo:redirectUrl}));},
-    async setPassword(password) {if(password.length<12) throw new Error('Use at least 12 characters.');return unwrap(await client.auth.updateUser({password}));},
-    async getSession() {const data=unwrap(await client.auth.getSession());return data.session;},
-    onAuthChange(callback) {return client.auth.onAuthStateChange(callback);},
-    async loadTracker() {
-      await requireUser();
-      const snapshot=unwrap(await client.rpc('load_tracker'));
-      if (!snapshot || !Array.isArray(snapshot.tasks) || !Array.isArray(snapshot.members)) throw new Error('Unexpected tracker response. Contact the owner.');
-      return {tasks:snapshot.tasks.map(fromRow),members:snapshot.members.map(m=>({id:m.user_id,name:m.display_name}))};
-    },
-    async saveTask(id,expectedVersion,fields) {
-      if (!ids.has(id) || !Number.isSafeInteger(expectedVersion) || expectedVersion<0) throw new Error('Invalid task or version.');
+    readRaw,
+    async loadTracker(){return {tasks:read(),members:[]};},
+    async saveTask(id,expectedVersion,fields){
+      if(!ids.has(id)||!Number.isSafeInteger(expectedVersion)||expectedVersion<0)throw new Error('Invalid task or version.');
       const clean=editableFields(fields);
-      const data=unwrap(await client.rpc('save_task',{p_id:id,p_expected_version:expectedVersion,p_fields:clean}));
-      if (!Array.isArray(data)||data.length!==1) throw new Error('No saved task was returned. Refresh before retrying.');
-      return fromRow(data[0]);
+      return locked(()=>{const tasks=read(),index=tasks.findIndex(t=>t.id===id),current=tasks[index];
+        if(current.version!==expectedVersion)throw new ConflictError('This task changed in another tab. Compare the saved values before saving again.');
+        const saved={id,...clean,version:current.version+1,updatedAt:new Date().toISOString()};tasks[index]=saved;write(tasks);return saved;});
     },
-    async restoreTasks(records) {
+    async restoreTasks(records){
       const clean=validateImport({format:'puc5-tracker',version:1,tasks:records},ids);
-      const data=unwrap(await client.rpc('restore_tasks',{p_records:clean}));
-      if (!Array.isArray(data)||data.length!==clean.length) throw new Error('Unexpected restore response. Refresh to check saved progress.');
-      return data.map(fromRow);
+      return locked(()=>{const tasks=read(),imported=new Map(clean.map(t=>[t.id,t])),saved=[];
+        const next=tasks.map(current=>{const incoming=imported.get(current.id);if(!incoming)return current;
+          const row={id:current.id,...editableFields(incoming),version:current.version+1,updatedAt:new Date().toISOString()};saved.push(row);return row;});
+        write(next);return saved;});
     }
   };
 }

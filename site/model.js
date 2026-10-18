@@ -1,4 +1,4 @@
-import {TASKS} from './catalog.js';
+import {TASKS} from './catalog.js?v=local-1';
 export const defaultTask = t => ({...t,status:'pending',priority:'normal',notes:'',dueDate:null,assigneeId:null,version:0,updatedAt:null,updatedBy:null});
 export function createModel() {
   let generation=0,flight=null;

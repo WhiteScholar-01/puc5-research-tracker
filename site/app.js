@@ -1,39 +1,33 @@
-import {PHASES, TASKS} from './catalog.js';
-import {summarize,filterTasks,validateImport,migrateLegacy,toCsv,localDate,editableFields} from './validation.js';
-import {createStore,validateConfig,ConflictError,AccessError} from './store.js';
-import {createModel} from './model.js';
-import {CONFIG} from './config.js';
+import {PHASES,TASKS} from './catalog.js?v=local-1';
+import {summarize,filterTasks,validateImport,migrateLegacy,toCsv,localDate,editableFields} from './validation.js?v=local-1';
+import {createStore,ConflictError,STORAGE_KEY} from './store.js?v=local-1';
+import {createModel} from './model.js?v=local-1';
 const $=id=>document.getElementById(id);
 const model=createModel();
-let store=null,session=null,shared=false,busy=false,toastTimer,collapseAll=false;
-const closedPhases=new Set();
-let conflictVersion=null;
-const ids=new Set(TASKS.map(t=>t.id));
+let store=null,ready=false,busy=false,toastTimer,collapseAll=false,startupError='',conflictVersion=null;
+const closedPhases=new Set(),ids=new Set(TASKS.map(t=>t.id));
 const labels={'pending':'Pending','in-progress':'In progress','completed':'Completed'};
 const shortPhase=p=>p.title.replace(/^\d+\. /,'').replace(/ \(W[\d-]+\)$/,'');
 const element=(tag,className,text)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 function showToast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,7000);}
 function showDialog(id){if(!$(id).open)$(id).showModal();}
-function clearPrivate(){session=null;shared=false;model.clear();for(const id of ['task-dialog','import-dialog','password-dialog'])$(id).close();$('task-form').reset();$('import-file').value='';$('conflict-values').textContent='';$('task-updated').textContent='';$('auth-form').reset();render();}
-function userName(id){return model.members.find(m=>m.id===id)?.name||'Team member';}
-function readableUpdate(t){return t.updatedAt?`Updated ${new Date(t.updatedAt).toLocaleString()} by ${userName(t.updatedBy)}`:'No updates yet.';}
+function userName(name){return name;}
+function readableUpdate(t){return t.updatedAt?`Saved in this browser ${new Date(t.updatedAt).toLocaleString()}`:'Not updated yet.';}
 function filters(){return {query:$('search').value,phaseId:$('phase-filter').value,status:$('status-filter').value,priority:$('priority-filter').value};}
 function render(){
   const metrics=summarize(model.tasks);
-  $('percent').textContent=shared?`${metrics.percent}%`:'—';
-  $('overall-progress').value=shared?metrics.percent:0;
-  $('progress-caption').textContent=shared?`${metrics.completed} of ${metrics.total} tasks completed`:'74 tasks across 9 phases';
-  $('stat-completed').textContent=shared?metrics.completed:'—';
-  $('stat-in-progress').textContent=shared?metrics.inProgress:'—';
-  $('stat-overdue').textContent=shared?metrics.overdue:'—';
-  $('account').textContent=session?'Sign out':'Member sign in ↗';
-  $('notice-title').textContent=shared?'Team workspace connected':session?'Loading team workspace…':store?'Invited members only':'Research roadmap preview';
-  $('notice-copy').textContent=shared?'You and your team are working from the same saved progress.':session?'Checking your membership and fetching the latest progress.':store?'Sign in to see team progress, add notes, and update tasks.':'Connect shared storage to save progress and invite your team.';
-  $('setup').hidden=shared;$('setup').textContent=store?'Sign in →':'Connect workspace →';
-  for(const id of ['backup','csv','import'])$(id).disabled=!shared;
-  $('refresh').hidden=!shared;
+  $('percent').textContent=ready?`${metrics.percent}%`:'—';
+  $('overall-progress').value=ready?metrics.percent:0;
+  $('progress-caption').textContent=ready?`${metrics.completed} of ${metrics.total} tasks completed`:'74 tasks across 9 phases';
+  $('stat-completed').textContent=ready?metrics.completed:'—';
+  $('stat-in-progress').textContent=ready?metrics.inProgress:'—';
+  $('stat-overdue').textContent=ready?metrics.overdue:'—';
+  $('notice-title').textContent=ready?'Open tracker · no account needed':'Browser storage unavailable';
+  $('notice-copy').textContent=ready?'Changes stay in this browser. Use Backup and Import to move progress between devices.':startupError||'Loading your saved progress…';
+  $('backup').disabled=!store;
+  for(const id of ['csv','import'])$(id).disabled=!ready;
   const visible=filterTasks(model.tasks,filters());
-  $('results-count').textContent=`${visible.length} of ${TASKS.length} research tasks${shared?` · ${metrics.pending} pending`:''}`;
+  $('results-count').textContent=`${visible.length} of ${TASKS.length} research tasks${ready?` · ${metrics.pending} pending`:''}`;
   $('empty').hidden=visible.length>0;
   const root=$('phases');root.replaceChildren();
   for(const p of PHASES){
@@ -42,14 +36,15 @@ function render(){
     const d=element('details','phase');d.open=!closedPhases.has(p.id);d.id=`phase-${p.id}`;
     const sum=element('summary');sum.append(element('span','phase-number',String(p.id+1).padStart(2,'0')));
     const name=element('span','phase-title',shortPhase(p));name.append(element('span','phase-week',p.weeks.replace('-','–')));sum.append(name);
-    const meta=element('span','phase-completion');const bar=element('progress');bar.max=all.length;bar.value=shared?pm.completed:0;bar.setAttribute('aria-label',`${shortPhase(p)} completion`);meta.append(bar,element('span','',shared?`${pm.completed} / ${all.length}`:`${all.length} tasks`));sum.append(meta);d.append(sum);
+    const meta=element('span','phase-completion');const bar=element('progress');bar.max=all.length;bar.value=ready?pm.completed:0;bar.setAttribute('aria-label',`${shortPhase(p)} completion`);meta.append(bar,element('span','',ready?`${pm.completed} / ${all.length}`:`${all.length} tasks`));sum.append(meta);d.append(sum);
     const list=element('div','task-list');
     for(const t of items){
       const row=element('div',`task-row ${t.status==='completed'?'is-completed':''}`);
-      row.append(element('span',`task-circle ${t.status==='completed'?'done':t.status==='in-progress'?'started':''}`,t.status==='completed'?'✓':t.status==='in-progress'?'·':''));
-      const content=element('div','task-content');const title=element('button','task-title',t.title);title.type='button';title.disabled=!shared;title.addEventListener('click',()=>openTask(t.id));content.append(title);
+      const toggle=element('button',`task-circle ${t.status==='completed'?'done':t.status==='in-progress'?'started':''}`,t.status==='completed'?'✓':t.status==='in-progress'?'·':'');
+      toggle.type='button';toggle.disabled=!ready;toggle.setAttribute('aria-label',`${t.status==='completed'?'Mark pending':'Mark complete'}: ${t.title}`);toggle.onclick=()=>quickToggle(t.id);row.append(toggle);
+      const content=element('div','task-content');const title=element('button','task-title',t.title);title.type='button';title.disabled=!ready;title.addEventListener('click',()=>openTask(t.id));content.append(title);
       const info=element('div','task-meta');
-      if(shared){
+      if(ready){
         if(t.status!=='pending')info.append(element('span','',labels[t.status]));
         if(t.dueDate)info.append(element('span',t.dueDate<localDate()&&t.status!=='completed'?'late':'',`Due ${t.dueDate}`));
         if(t.assigneeId)info.append(element('span','',userName(t.assigneeId)));
@@ -57,8 +52,8 @@ function render(){
       }
       content.append(info);row.append(content);
       if(t.title.startsWith('GATE '))row.append(element('span','task-badge gate',t.title.split(':')[0]));
-      else if(shared&&t.priority==='high')row.append(element('span','task-badge high','HIGH'));
-      if(shared){const edit=element('button','task-arrow','↗');edit.setAttribute('aria-label',`Edit ${t.title}`);edit.onclick=()=>openTask(t.id);row.append(edit);}
+      else if(ready&&t.priority==='high')row.append(element('span','task-badge high','HIGH'));
+      if(ready){const edit=element('button','task-arrow','↗');edit.setAttribute('aria-label',`Edit ${t.title}`);edit.onclick=()=>openTask(t.id);row.append(edit);}
       list.append(row);
     }
     d.append(list);d.addEventListener('toggle',()=>{if(!d.isConnected)return;if(d.open)closedPhases.delete(p.id);else closedPhases.add(p.id);});root.append(d);
@@ -66,19 +61,25 @@ function render(){
   document.querySelectorAll('.phase-link').forEach(b=>b.classList.toggle('selected',b.dataset.id===$('phase-filter').value));
 }
 function openTask(id){
-  if(!shared||busy)return;conflictVersion=null;model.openTask(id);const t=model.draft;
+  if(!ready||busy)return;conflictVersion=null;model.openTask(id);const t=model.draft;
   $('task-title').textContent=t.title;$('task-phase').textContent=shortPhase(PHASES[t.phaseId]);$('task-updated').textContent=readableUpdate(t);
   const form=$('task-form');for(const name of ['status','priority','notes'])form.elements[name].value=t[name];form.elements.dueDate.value=t.dueDate||'';
-  $('assignee').replaceChildren(new Option('Unassigned',''));for(const m of model.members)$('assignee').add(new Option(m.name,m.id));form.elements.assigneeId.value=t.assigneeId||'';
+  form.elements.assigneeId.value=t.assigneeId||'';
   $('task-error').textContent='';$('conflict').hidden=true;$('save-task').disabled=false;showDialog('task-dialog');
 }
 function captureDraft(){
   if(!model.draft)return;const f=$('task-form');Object.assign(model.draft,{status:f.elements.status.value,priority:f.elements.priority.value,notes:f.elements.notes.value,dueDate:f.elements.dueDate.value||null,assigneeId:f.elements.assigneeId.value||null});
 }
 async function refresh(announce=false){
-  if(!store||!session)return;
-  try{await model.refresh(()=>store.loadTracker());if(!session)return;shared=true;render();$('sync-time').textContent=`Synced ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;if(announce)showToast('Shared progress refreshed.');}
-  catch(e){if(e instanceof AccessError){clearPrivate();showToast(e.message);}else{$('sync-time').textContent='Sync failed · edits are not saved offline';if(announce)showToast(e.message);throw e;}}
+  if(!store)return;
+  try{await model.refresh(()=>store.loadTracker());ready=true;render();$('sync-time').textContent='Saved on this browser';if(announce)showToast('Saved progress loaded.');}
+  catch(error){$('sync-time').textContent='Could not read browser storage';if(announce)showToast(error.message);throw error;}
+}
+async function quickToggle(id){
+  if(!ready||busy)return;busy=true;const task=model.tasks.find(t=>t.id===id);
+  try{await store.saveTask(id,task.version,{...task,status:task.status==='completed'?'pending':'completed'});await refresh();}
+  catch(error){showToast(error.message);if(error instanceof ConflictError)await refresh().catch(()=>{});}
+  finally{busy=false;}
 }
 function freezeEditor(saving){for(const control of $('task-form').querySelectorAll('input,select,textarea,button'))control.disabled=saving;$('save-task').textContent=saving?'Saving…':'Save changes';}
 async function runButton(button,action){button.disabled=true;try{await action();}finally{button.disabled=false;}}
@@ -99,77 +100,51 @@ $('task-dialog').addEventListener('cancel',e=>{if(busy)e.preventDefault();});
 $('task-dialog').addEventListener('close',()=>{model.closeTask();$('task-form').reset();$('conflict-values').textContent='';});
 $('task-form').addEventListener('input',captureDraft);
 $('task-form').onsubmit=async e=>{
-  e.preventDefault();if(!shared||busy)return;captureDraft();const draft={...model.draft},version=model.expectedVersion;busy=true;
+  e.preventDefault();if(!ready||busy)return;captureDraft();const draft={...model.draft},version=model.expectedVersion;busy=true;
   $('task-error').textContent='';freezeEditor(true);
   try{
     await store.saveTask(draft.id,version,draft);
-    if(!session)return;$('task-dialog').close();showToast('Changes saved to the shared workspace.');
-    try{await refresh();}catch{showToast('Changes saved. Refresh is temporarily unavailable.');}
+    $('task-dialog').close();showToast('Changes saved in this browser.');
+    await refresh().catch(()=>showToast('Changes saved. Could not reload the display.'));
   }catch(error){
-    if(error instanceof AccessError){clearPrivate();showToast(error.message);}
-    else if(error instanceof ConflictError){
-      $('task-error').textContent=error.message;
-      try{await refresh();if(!shared)return;const latest=model.tasks.find(t=>t.id===draft.id);conflictVersion=latest.version;$('conflict-values').textContent=`Status: ${labels[latest.status]}\nPriority: ${latest.priority}\nDue: ${latest.dueDate||'None'}\nAssigned: ${latest.assigneeId?userName(latest.assigneeId):'Unassigned'}\nNotes: ${latest.notes||'None'}\n${readableUpdate(latest)}`;$('conflict').hidden=false;$('save-task').disabled=true;}catch{$('task-error').textContent='Could not fetch the newer version. Your draft is retained; try again after reconnecting.';}
-    }else $('task-error').textContent=error.message;
+    $('task-error').textContent=error.message;
+    if(error instanceof ConflictError){
+      try{await refresh();const latest=model.tasks.find(t=>t.id===draft.id);conflictVersion=latest.version;
+        $('conflict-values').textContent=`Status: ${labels[latest.status]}\nPriority: ${latest.priority}\nDue: ${latest.dueDate||'None'}\nAssigned: ${latest.assigneeId||'Unassigned'}\nNotes: ${latest.notes||'None'}`;
+        $('conflict').hidden=false;
+      }catch{$('task-error').textContent='Could not read the latest saved version. Your draft is retained.';}
+    }
   }finally{busy=false;freezeEditor(false);if(!$('conflict').hidden)$('save-task').disabled=true;}
 };
-$('rebase').onclick=()=>{model.rebase(conflictVersion);$('conflict').hidden=true;$('task-error').textContent='Review your draft, then save to replace the latest task values.';$('save-task').disabled=false;};
-$('account').onclick=async()=>{
-  if(!store){showDialog('setup-dialog');return;}
-  if(session){clearPrivate();try{await store.signOut();showToast('Signed out.');}catch{showToast('Shared data cleared. Reload the page to finish ending the session.');}}else showDialog('auth-dialog');
+$('rebase').onclick=()=>{model.rebase(conflictVersion);$('conflict').hidden=true;$('task-error').textContent='Review your draft, then save to replace the displayed values.';$('save-task').disabled=false;};
+$('backup').onclick=()=>{
+  try{if(!ready){const raw=store.readRaw();if(!raw)throw new Error('There is no saved progress to download.');download('puc5-recovery.json',raw,'application/json');return;}
+    download(`puc5-backup-${localDate()}.json`,JSON.stringify({format:'puc5-tracker',version:1,exportedAt:new Date().toISOString(),tasks:exportTasks()},null,2),'application/json');
+  }catch(error){showToast(error.message);}
 };
-$('setup').onclick=()=>showDialog(store?'auth-dialog':'setup-dialog');
-$('auth-form').onsubmit=async e=>{
-  e.preventDefault();const f=e.currentTarget;await runButton(f.querySelector('[type=submit]'),async()=>{try{const result=await store.signIn(f.elements.email.value.trim(),f.elements.password.value);session=result.session;f.reset();$('auth-dialog').close();render();await refresh();}catch{$('auth-error').textContent='Sign-in failed or this account is not a team member. Check your details or ask the owner.';if(!shared){session=null;render();}}});
-};
-$('recover').onclick=async()=>{
-  const email=$('auth-form').elements.email;if(!email.value||!email.checkValidity()){email.reportValidity();return;}
-  await runButton($('recover'),async()=>{try{await store.requestRecovery(email.value.trim(),location.origin+location.pathname);$('auth-error').textContent='If this is an invited account, a recovery email will arrive shortly. Open it in this browser.';}catch{$('auth-error').textContent='Could not request recovery. Please try again later.';}});
-};
-$('password-form').onsubmit=async e=>{e.preventDefault();await runButton(e.currentTarget.querySelector('button'),async()=>{try{await store.setPassword($('password-form').elements.password.value);$('password-form').reset();$('password-dialog').close();showToast('Password saved.');await refresh();}catch(error){$('password-error').textContent=error.message;}});};
-$('backup').onclick=()=>{if(shared)download(`puc5-backup-${localDate()}.json`,JSON.stringify({format:'puc5-tracker',version:1,exportedAt:new Date().toISOString(),tasks:exportTasks()},null,2),'application/json');};
-$('csv').onclick=()=>{if(shared)download(`puc5-research-${localDate()}.csv`,toCsv(model.tasks),'text/csv;charset=utf-8');};
-$('import').onclick=()=>{if(shared){$('import-error').textContent='';showDialog('import-dialog');}};
+$('csv').onclick=()=>{if(ready)download(`puc5-research-${localDate()}.csv`,toCsv(model.tasks),'text/csv;charset=utf-8');};
+$('import').onclick=()=>{if(ready){$('import-error').textContent='';showDialog('import-dialog');}};
 $('import-run').onclick=async()=>{
-  if(!shared||busy)return;const file=$('import-file').files[0];$('import-error').textContent='';
+  if(!ready||busy)return;const file=$('import-file').files[0];$('import-error').textContent='';
   if(!file){$('import-error').textContent='Choose a JSON file first.';return;}
-  if(file.size>1024*1024){$('import-error').textContent='File is too large. Choose a backup under 1 MB.';return;}
+  if(file.size>1024*1024){$('import-error').textContent='Choose a backup under 1 MB.';return;}
   busy=true;await runButton($('import-run'),async()=>{
     try{
       const parsed=JSON.parse(await file.text());let records;
       if($('import-kind').value==='legacy'){
-        const legacy=migrateLegacy(parsed,ids);await refresh();if(!shared)return;
+        const legacy=migrateLegacy(parsed,ids);await refresh();
         records=legacy.map(x=>{const current=model.tasks.find(t=>t.id===x.id);return {id:x.id,version:current.version,...editableFields({...current,status:x.status})};});
       }else records=validateImport(parsed,ids);
-      if(!confirm(`Replace the editable values of ${records.length} shared tasks? This affects all members. Version conflicts cancel the entire import.`))return;
-      await store.restoreTasks(records);if(!session)return;$('import-dialog').close();$('import-file').value='';showToast(`${records.length} tasks imported successfully.`);await refresh();
-    }catch(error){if(error instanceof AccessError){clearPrivate();showToast(error.message);}else $('import-error').textContent=error instanceof SyntaxError?'This file is not valid JSON.':error.message;}
+      if(!confirm(`Replace the saved values of ${records.length} tasks in this browser? Other browsers are not affected.`))return;
+      await store.restoreTasks(records);$('import-dialog').close();$('import-file').value='';showToast(`${records.length} tasks imported in this browser.`);await refresh();
+    }catch(error){$('import-error').textContent=error instanceof SyntaxError?'This file is not valid JSON.':error.message;}
     finally{busy=false;}
   });
 };
 $('refresh').onclick=()=>refresh(true).catch(()=>{});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)refresh().catch(()=>{});});
-setInterval(()=>{if(!document.hidden&&session&&!busy)refresh().catch(()=>{});},30000);
+window.addEventListener('storage',event=>{if(event.key===STORAGE_KEY||event.key===null)refresh().catch(error=>showToast(error.message));});
 async function boot(){
-  render();
-  const hash=new URLSearchParams(location.hash.slice(1)),query=new URLSearchParams(location.search);
-  const invite=hash.get('type')==='invite';
-  if(hash.has('error')||query.has('error')){showToast('This invitation or recovery link is invalid or expired. Ask for a new one.');history.replaceState(null,'',location.pathname);}
-  try{validateConfig(CONFIG);}catch{return;}
-  try{
-    const {createClient}=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm');
-    const client=createClient(CONFIG.url,CONFIG.publishableKey,{auth:{persistSession:false,autoRefreshToken:true,detectSessionInUrl:true}});
-    store=createStore(CONFIG,client);
-    store.onAuthChange((event,newSession)=>{
-      // Auth callbacks must return promptly; perform API work outside the SDK lock.
-      setTimeout(()=>{
-        if(event==='SIGNED_OUT'){clearPrivate();return;}
-        session=newSession;
-        if(event==='PASSWORD_RECOVERY'||(invite&&event==='SIGNED_IN')){showDialog('password-dialog');}
-        if(newSession)refresh().catch(()=>{});
-      },0);
-    });
-    session=await store.getSession();render();if(session){await refresh();if(invite)showDialog('password-dialog');}
-  }catch{showToast('The sign-in service could not start. Check your connection or ask the owner to verify the project configuration.');}
+  render();try{store=createStore();await refresh();}
+  catch(error){startupError=error.message;ready=false;render();showToast(error.message);}
 }
 boot();
